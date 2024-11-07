@@ -9,13 +9,12 @@ from dash.exceptions import PreventUpdate
 
 # Initialize the Dash app
 app = dash.Dash(__name__)
-server = app.server
+server = app.server  # Add this for deployment
 
 # Global variables to track experiment state
 TOTAL_TRIALS = 10
 BLANK_DURATION = 1000  # 1 second in milliseconds
 
-# Function to generate random data
 def generate_random_data():
     schools = ['School A', 'School B', 'School C', 'School D', 'School E']
     months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
@@ -32,7 +31,6 @@ def generate_random_data():
     
     return pd.DataFrame(data)
 
-# Function to create heatmap
 def create_heatmap(df):
     pivot_df = df.pivot(index='School', columns='Month', values='Absences')
     
@@ -50,7 +48,6 @@ def create_heatmap(df):
         )
     )
 
-# Function to create scatterplot
 def create_scatterplot(df):
     return px.scatter(
         df,
@@ -63,18 +60,22 @@ def create_scatterplot(df):
 
 # App layout
 app.layout = html.Div([
-    # Hidden div for storing experiment state
     dcc.Store(id='experiment-state', data={
         'current_trial': 0,
         'times': [],
         'choices': [],
-        'start_time': None
+        'start_time': None,
+        'waiting_for_click': True  # New flag to track if we're waiting for a click
     }),
     
-    # Display current trial number
     html.H2(id='trial-header'),
     
-    # Container for charts
+    # Instructions
+    html.Div([
+        html.P("Click on the visualization that helps you complete the task more quickly.", 
+               style={'fontSize': '18px', 'marginBottom': '20px'})
+    ], id='instructions'),
+    
     html.Div([
         html.Div([
             html.H3('Heatmap'),
@@ -87,10 +88,8 @@ app.layout = html.Div([
         ], style={'width': '50%', 'display': 'inline-block'})
     ], id='charts-container'),
     
-    # Interval for timing
     dcc.Interval(id='interval', interval=BLANK_DURATION, disabled=True),
     
-    # Results display (hidden until experiment complete)
     html.Div(id='results', style={'display': 'none'})
 ])
 
@@ -113,43 +112,55 @@ def update_experiment(heatmap_click, scatter_click, n_intervals, exp_state):
     
     if not ctx.triggered:
         # Initial load
-        return exp_state, {'display': 'block'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", True, create_heatmap(generate_random_data()), create_scatterplot(generate_random_data()), {'display': 'none'}, None
+        data = generate_random_data()
+        return exp_state, {'display': 'block'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", True, create_heatmap(data), create_scatterplot(data), {'display': 'none'}, None
     
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
-    if trigger_id in ['heatmap', 'scatterplot']:
-        # Chart was clicked
+    # Only process clicks if we're waiting for one
+    if trigger_id in ['heatmap', 'scatterplot'] and exp_state['waiting_for_click']:
         current_time = time.time()
-        if exp_state['start_time'] is None:
-            exp_state['start_time'] = current_time
-            return exp_state, {'display': 'block'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", True, dash.no_update, dash.no_update, {'display': 'none'}, None
         
-        response_time = current_time - exp_state['start_time']
-        exp_state['times'].append(response_time)
-        exp_state['choices'].append(trigger_id)
-        exp_state['current_trial'] += 1
-        exp_state['start_time'] = None
-        
-        # Show blank screen
-        if exp_state['current_trial'] < TOTAL_TRIALS:
-            return exp_state, {'display': 'none'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", False, dash.no_update, dash.no_update, {'display': 'none'}, None
-        else:
-            # Experiment complete, show results
-            results_html = html.Div([
-                html.H2('Experiment Complete'),
-                html.H3('Results:'),
-                html.Ul([
-                    html.Li(f"Average response time for Heatmap: {np.mean([t for i, t in enumerate(exp_state['times']) if exp_state['choices'][i] == 'heatmap']):.2f} seconds"),
-                    html.Li(f"Average response time for Scatterplot: {np.mean([t for i, t in enumerate(exp_state['times']) if exp_state['choices'][i] == 'scatterplot']):.2f} seconds")
+        # Record the click and timing
+        if exp_state['start_time'] is not None:
+            response_time = current_time - exp_state['start_time']
+            exp_state['times'].append(response_time)
+            exp_state['choices'].append(trigger_id)
+            exp_state['current_trial'] += 1
+            exp_state['waiting_for_click'] = False
+            
+            # Show blank screen
+            if exp_state['current_trial'] < TOTAL_TRIALS:
+                exp_state['start_time'] = None
+                return exp_state, {'display': 'none'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", False, dash.no_update, dash.no_update, {'display': 'none'}, None
+            else:
+                # Experiment complete, show results
+                heatmap_times = [t for i, t in enumerate(exp_state['times']) if exp_state['choices'][i] == 'heatmap']
+                scatter_times = [t for i, t in enumerate(exp_state['times']) if exp_state['choices'][i] == 'scatterplot']
+                
+                results_html = html.Div([
+                    html.H2('Experiment Complete'),
+                    html.H3('Results:'),
+                    html.Div([
+                        html.P(f"Number of Heatmap selections: {len(heatmap_times)}"),
+                        html.P(f"Number of Scatterplot selections: {len(scatter_times)}"),
+                        html.P(f"Average response time for Heatmap: {np.mean(heatmap_times):.2f} seconds"),
+                        html.P(f"Average response time for Scatterplot: {np.mean(scatter_times):.2f} seconds")
+                    ])
                 ])
-            ])
-            return exp_state, {'display': 'none'}, 'Experiment Complete', True, dash.no_update, dash.no_update, {'display': 'block'}, results_html
+                return exp_state, {'display': 'none'}, 'Experiment Complete', True, dash.no_update, dash.no_update, {'display': 'block'}, results_html
+        
+        # Start timing if this is the first click
+        exp_state['start_time'] = current_time
+        return exp_state, {'display': 'block'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", True, dash.no_update, dash.no_update, {'display': 'none'}, None
     
     elif trigger_id == 'interval':
-        # Interval triggered - show new charts
-        return exp_state, {'display': 'block'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", True, create_heatmap(generate_random_data()), create_scatterplot(generate_random_data()), {'display': 'none'}, None
+        # Show new charts after blank screen
+        data = generate_random_data()
+        exp_state['waiting_for_click'] = True
+        return exp_state, {'display': 'block'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", True, create_heatmap(data), create_scatterplot(data), {'display': 'none'}, None
     
     raise PreventUpdate
 
 if __name__ == '__main__':
-    app.run_server(debug=False)
+    app.run_server(debug=True)
