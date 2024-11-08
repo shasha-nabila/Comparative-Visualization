@@ -54,7 +54,7 @@ def generate_trial_sequence():
 # Function to load Excel data
 def load_excel_data(sheet_name):
     # Replace this with your actual Excel file path
-    df = pd.read_excel('cwk.xlsx', sheet_name=sheet_name)
+    df = pd.read_excel('cwk.xlsx', sheet_name=sheet_name, usecols=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
     
     # Convert the dataframe to numeric values, excluding the index/column headers
     numeric_df = df.copy()
@@ -126,7 +126,7 @@ def create_heatmap(df, question):
         data=go.Heatmap(
             z=df.values,
             x=df.columns,
-            y=df.index,
+            y=list('ABCDEFGHIJ'),
             colorscale='Blues',
             colorbar=dict(title='Values')
         ),
