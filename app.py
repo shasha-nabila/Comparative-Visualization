@@ -11,7 +11,7 @@ from dash.exceptions import PreventUpdate
 app = dash.Dash(__name__)
 
 # Global variables to track experiment state
-TOTAL_TRIALS = 10
+TOTAL_TRIALS = 20
 BLANK_DURATION = 1000  # 1 second in milliseconds
 
 def generate_random_data():
@@ -63,7 +63,8 @@ app.layout = html.Div([
         'current_trial': 0,
         'times': [],
         'choices': [],
-        'start_time': None
+        'start_time': None,
+        'show_heatmap': True  # Start by showing heatmap
     }),
     
     html.H2(id='trial-header'),
@@ -74,23 +75,11 @@ app.layout = html.Div([
                style={'fontSize': '18px', 'marginBottom': '20px'})
     ], id='instructions'),
     
-    html.Div([
-        # Heatmap section
-        html.Div([
-            html.H3('Heatmap'),
-            dcc.Graph(id='heatmap', figure={}),
-            html.Button('Choose Heatmap', id='heatmap-button', 
-                       style={'width': '100%', 'padding': '10px', 'marginTop': '10px'})
-        ], style={'width': '50%', 'display': 'inline-block'}),
-        
-        # Scatterplot section
-        html.Div([
-            html.H3('Scatterplot'),
-            dcc.Graph(id='scatterplot', figure={}),
-            html.Button('Choose Scatterplot', id='scatter-button',
-                       style={'width': '100%', 'padding': '10px', 'marginTop': '10px'})
-        ], style={'width': '50%', 'display': 'inline-block'})
-    ], id='charts-container'),
+    html.Div(id='graph-container', children=[
+        dcc.Graph(id='graph', figure={}),
+        html.Button('Choose Visualization', id='choose-button', 
+                    style={'width': '100%', 'padding': '10px', 'marginTop': '10px'})
+    ]),
     
     dcc.Interval(id='interval', interval=BLANK_DURATION, disabled=True),
     
@@ -99,49 +88,48 @@ app.layout = html.Div([
 
 @callback(
     [Output('experiment-state', 'data'),
-     Output('charts-container', 'style'),
+     Output('graph-container', 'style'),
      Output('trial-header', 'children'),
      Output('interval', 'disabled'),
-     Output('heatmap', 'figure'),
-     Output('scatterplot', 'figure'),
+     Output('graph', 'figure'),
      Output('results', 'style'),
      Output('results', 'children')],
-    [Input('heatmap-button', 'n_clicks'),
-     Input('scatter-button', 'n_clicks'),
+    [Input('choose-button', 'n_clicks'),
      Input('interval', 'n_intervals')],
     [State('experiment-state', 'data')]
 )
-def update_experiment(heatmap_clicks, scatter_clicks, n_intervals, exp_state):
+def update_experiment(choose_clicks, n_intervals, exp_state):
     ctx = dash.callback_context
     
+    # Generate new random data for each trial
+    data = generate_random_data()
+    figure = create_heatmap(data) if exp_state['show_heatmap'] else create_scatterplot(data)
+    
     if not ctx.triggered:
-        # Initial load
-        data = generate_random_data()
-        return exp_state, {'display': 'block'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", True, create_heatmap(data), create_scatterplot(data), {'display': 'none'}, None
+        # Initial load: set up the first trial
+        exp_state['start_time'] = time.time()
+        return exp_state, {'display': 'block'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", True, figure, {'display': 'none'}, None
     
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
-    # Handle button clicks
-    if trigger_id in ['heatmap-button', 'scatter-button']:
+    # Handle button click to record response and advance to the next trial
+    if trigger_id == 'choose-button' and exp_state['current_trial'] < TOTAL_TRIALS:
         current_time = time.time()
-        
-        if exp_state['start_time'] is None:
-            # First click of the trial
-            exp_state['start_time'] = current_time
-            return exp_state, {'display': 'block'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", True, dash.no_update, dash.no_update, {'display': 'none'}, None
-        
-        # Record click and timing
         response_time = current_time - exp_state['start_time']
-        exp_state['times'].append(response_time)
-        exp_state['choices'].append('heatmap' if trigger_id == 'heatmap-button' else 'scatterplot')
-        exp_state['current_trial'] += 1
-        exp_state['start_time'] = None
         
-        # Show blank screen or results
-        if exp_state['current_trial'] < TOTAL_TRIALS:
-            return exp_state, {'display': 'none'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", False, dash.no_update, dash.no_update, {'display': 'none'}, None
-        else:
-            # Experiment complete, show results
+        # Record the choice and time
+        choice = 'heatmap' if exp_state['show_heatmap'] else 'scatterplot'
+        exp_state['times'].append(response_time)
+        exp_state['choices'].append(choice)
+        
+        # Advance trial count and toggle visualization
+        exp_state['current_trial'] += 1
+        exp_state['show_heatmap'] = not exp_state['show_heatmap']
+        exp_state['start_time'] = time.time()  # Reset start time for the next trial
+
+        # Check if experiment is complete
+        if exp_state['current_trial'] >= TOTAL_TRIALS:
+            # Summarize results and show them
             heatmap_times = [t for i, t in enumerate(exp_state['times']) if exp_state['choices'][i] == 'heatmap']
             scatter_times = [t for i, t in enumerate(exp_state['times']) if exp_state['choices'][i] == 'scatterplot']
             
@@ -155,14 +143,17 @@ def update_experiment(heatmap_clicks, scatter_clicks, n_intervals, exp_state):
                     html.P(f"Average response time for Scatterplot: {np.mean(scatter_times):.2f} seconds")
                 ])
             ])
-            return exp_state, {'display': 'none'}, 'Experiment Complete', True, dash.no_update, dash.no_update, {'display': 'block'}, results_html
+            return exp_state, {'display': 'none'}, 'Experiment Complete', True, dash.no_update, {'display': 'block'}, results_html
+        
+        # Show blank screen before displaying the next chart
+        return exp_state, {'display': 'none'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", False, dash.no_update, {'display': 'none'}, None
     
+    # When the interval completes, display the next chart
     elif trigger_id == 'interval':
-        # Show new charts after blank screen
-        data = generate_random_data()
-        return exp_state, {'display': 'block'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", True, create_heatmap(data), create_scatterplot(data), {'display': 'none'}, None
+        return exp_state, {'display': 'block'}, f"Trial {exp_state['current_trial'] + 1}/{TOTAL_TRIALS}", True, figure, {'display': 'none'}, None
     
     raise PreventUpdate
+
 
 if __name__ == '__main__':
     app.run_server(debug=True)
