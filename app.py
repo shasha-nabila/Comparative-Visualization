@@ -18,45 +18,107 @@ TOTAL_SHEETS = 10  # Total number of data sheets
 
 # Function to generate trial sequence
 def generate_trial_sequence():
-    sheet_indices = list(range(TOTAL_SHEETS))
-    random.shuffle(sheet_indices)
-    
-    sequence = []
-    for sheet_idx in sheet_indices:
+    # Create pairs for sheets 1-5 (highest value questions)
+    high_value_pairs = []
+    for sheet_idx in range(5):
         if random.random() < 0.5:
-            sequence.extend([
+            high_value_pairs.extend([
                 {'trial_type': 'heatmap', 'sheet_index': sheet_idx},
                 {'trial_type': 'scatterplot', 'sheet_index': sheet_idx}
             ])
         else:
-            sequence.extend([
+            high_value_pairs.extend([
                 {'trial_type': 'scatterplot', 'sheet_index': sheet_idx},
                 {'trial_type': 'heatmap', 'sheet_index': sheet_idx}
             ])
-    return sequence
+    
+    # Create pairs for sheets 6-10 (lowest value questions)
+    low_value_pairs = []
+    for sheet_idx in range(5, 10):
+        if random.random() < 0.5:
+            low_value_pairs.extend([
+                {'trial_type': 'heatmap', 'sheet_index': sheet_idx},
+                {'trial_type': 'scatterplot', 'sheet_index': sheet_idx}
+            ])
+        else:
+            low_value_pairs.extend([
+                {'trial_type': 'scatterplot', 'sheet_index': sheet_idx},
+                {'trial_type': 'heatmap', 'sheet_index': sheet_idx}
+            ])
+    
+    # Combine and shuffle all pairs
+    all_pairs = high_value_pairs + low_value_pairs
+    random.shuffle(all_pairs)
+    return all_pairs
 
 # Function to load Excel data
 def load_excel_data(sheet_name):
     # Replace this with your actual Excel file path
     df = pd.read_excel('cwk.xlsx', sheet_name=sheet_name)
-    return df
-
-# Function to create random question and correct answer
-def generate_question(df, chart_type):
-    if chart_type == 'heatmap':
-        school = np.random.choice(df.index)
-        month = np.random.choice(df.columns)
-        value = df.loc[school, month]
-        question = f"Click on the value {value:.2f} in the heatmap"
-        correct_answer = {'school': school, 'month': month, 'value': value}
-    else:
-        month = np.random.choice(df.columns)
-        school = np.random.choice(df.index)
-        value = df.loc[school, month]
-        question = f"Click on the point for School {school} in {month}"
-        correct_answer = {'school': school, 'month': month, 'value': value}
     
-    return question, correct_answer
+    # Convert the dataframe to numeric values, excluding the index/column headers
+    numeric_df = df.copy()
+    for col in numeric_df.columns:
+        numeric_df[col] = pd.to_numeric(numeric_df[col], errors='coerce')
+    
+    return numeric_df
+
+# Function to find extreme value and its location
+def find_extreme_value(df, find_highest=True):
+    # Get numeric values only
+    values = df.values.astype(float)
+    
+    if find_highest:
+        value = np.nanmax(values)  # Using nanmax to handle any NaN values
+        locations = np.where(values == value)
+    else:
+        value = np.nanmin(values)  # Using nanmin to handle any NaN values
+        locations = np.where(values == value)
+    
+    # Get the school (row) and month (column) for the extreme value
+    school = df.index[locations[0][0]]
+    month = df.columns[locations[1][0]]
+    
+    return {
+        'value': float(value),  # Ensure value is float
+        'school': str(school),  # Ensure school is string
+        'month': str(month)     # Ensure month is string
+    }
+
+# Function to generate question and answer
+def generate_question(df, chart_type, sheet_index):
+    # Determine if we're looking for highest (sheets 0-4) or lowest (sheets 5-9) value
+    find_highest = sheet_index < 5
+    extreme_info = find_extreme_value(df, find_highest)
+    
+    if find_highest:
+        question = f"Click on the highest absence rate in {extreme_info['month']} in the {'heatmap' if chart_type == 'heatmap' else 'scatter plot'}"
+    else:
+        question = f"Click on the lowest absence rate in {extreme_info['month']} in the {'heatmap' if chart_type == 'heatmap' else 'scatter plot'}"
+    
+    return question, extreme_info
+
+# Function to check if clicked value matches the answer
+def check_answer(click_data, correct_answer, chart_type):
+    try:
+        if chart_type == 'heatmap':
+            clicked_row = str(click_data['points'][0]['y'])  # Convert to string for comparison
+            clicked_col = str(click_data['points'][0]['x'])  # Convert to string for comparison
+            clicked_value = float(click_data['points'][0]['z'])  # Convert to float for comparison
+        else:  # scatterplot
+            clicked_value = float(click_data['points'][0]['y'])  # Convert to float for comparison
+            clicked_col = str(click_data['points'][0]['x'])  # Convert to string for comparison
+            clicked_row = str(click_data['points'][0]['text'])  # Convert to string for comparison
+        
+        # Check if clicked position matches the correct answer
+        value_matches = abs(clicked_value - float(correct_answer['value'])) < 0.001  # Using small threshold for float comparison
+        position_matches = (clicked_row.strip() == str(correct_answer['school']).strip() and 
+                          clicked_col.strip() == str(correct_answer['month']).strip())
+        
+        return value_matches and position_matches
+    except Exception as e:
+        print(f"Error checking answer: {e}")
+        return False
 
 # Function to create heatmap
 def create_heatmap(df, question):
@@ -140,8 +202,8 @@ def update_experiment(click_data, n_intervals, exp_state):
         # Initial load - show first chart
         current_trial = exp_state['trial_sequence'][0]
         df = load_excel_data(f'Data{current_trial["sheet_index"] + 1}')
-        question, correct_answer = generate_question(df, current_trial['trial_type'])
-        exp_state['current_answer'] = correct_answer
+        question, answer = generate_question(df, current_trial['trial_type'], current_trial['sheet_index'])
+        exp_state['current_answer'] = answer
         exp_state['start_time'] = time.time()
         
         figure = create_heatmap(df, question) if current_trial['trial_type'] == 'heatmap' else create_scatterplot(df, question)
@@ -159,7 +221,7 @@ def update_experiment(click_data, n_intervals, exp_state):
     
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
-    if trigger_id == 'chart' and click_data is not None:  # Added click_data check
+    if trigger_id == 'chart' and click_data is not None:
         # Chart was clicked
         current_time = time.time()
         response_time = current_time - exp_state['start_time']
@@ -169,9 +231,11 @@ def update_experiment(click_data, n_intervals, exp_state):
         exp_state['times'].append(response_time)
         exp_state['choices'].append(current_trial['trial_type'])
         
-        # Simplified answer checking (always correct for now)
-        exp_state['correct_answers'].append(True)
-        exp_state['correct_count'] += 1
+        # Check if answer is correct
+        is_correct = check_answer(click_data, exp_state['current_answer'], current_trial['trial_type'])
+        exp_state['correct_answers'].append(is_correct)
+        if is_correct:
+            exp_state['correct_count'] += 1
         
         # Move to next trial
         exp_state['current_trial'] += 1
@@ -228,8 +292,8 @@ def update_experiment(click_data, n_intervals, exp_state):
         # Show next chart after blank screen
         current_trial = exp_state['trial_sequence'][exp_state['current_trial']]
         df = load_excel_data(f'Data{current_trial["sheet_index"] + 1}')
-        question, correct_answer = generate_question(df, current_trial['trial_type'])
-        exp_state['current_answer'] = correct_answer
+        question, answer = generate_question(df, current_trial['trial_type'], current_trial['sheet_index'])
+        exp_state['current_answer'] = answer
         exp_state['start_time'] = time.time()
         
         figure = create_heatmap(df, question) if current_trial['trial_type'] == 'heatmap' else create_scatterplot(df, question)
