@@ -17,39 +17,66 @@ BLANK_DURATION = 1000  # 1 second in milliseconds
 TOTAL_SHEETS = 10  # Total number of data sheets
 
 # Function to generate trial sequence
+# def generate_trial_sequence():
+#     # Create pairs for sheets 1-5 (highest value questions)
+#     high_value_pairs = []
+#     for sheet_idx in range(5):
+#         if random.random() < 0.5:
+#             high_value_pairs.extend([
+#                 {'trial_type': 'heatmap', 'sheet_index': sheet_idx},
+#                 {'trial_type': 'scatterplot', 'sheet_index': sheet_idx}
+#             ])
+#         else:
+#             high_value_pairs.extend([
+#                 {'trial_type': 'scatterplot', 'sheet_index': sheet_idx},
+#                 {'trial_type': 'heatmap', 'sheet_index': sheet_idx}
+#             ])
+    
+#     # Create pairs for sheets 6-10 (lowest value questions)
+#     low_value_pairs = []
+#     for sheet_idx in range(5, 10):
+#         if random.random() < 0.5:
+#             low_value_pairs.extend([
+#                 {'trial_type': 'heatmap', 'sheet_index': sheet_idx},
+#                 {'trial_type': 'scatterplot', 'sheet_index': sheet_idx}
+#             ])
+#         else:
+#             low_value_pairs.extend([
+#                 {'trial_type': 'scatterplot', 'sheet_index': sheet_idx},
+#                 {'trial_type': 'heatmap', 'sheet_index': sheet_idx}
+#             ])
+    
+#     # Combine and shuffle all pairs
+#     all_pairs = high_value_pairs + low_value_pairs
+#     random.shuffle(all_pairs)
+#     return all_pairs
+
+
 def generate_trial_sequence():
-    # Create pairs for sheets 1-5 (highest value questions)
-    high_value_pairs = []
-    for sheet_idx in range(5):
-        if random.random() < 0.5:
-            high_value_pairs.extend([
-                {'trial_type': 'heatmap', 'sheet_index': sheet_idx},
-                {'trial_type': 'scatterplot', 'sheet_index': sheet_idx}
-            ])
-        else:
-            high_value_pairs.extend([
-                {'trial_type': 'scatterplot', 'sheet_index': sheet_idx},
-                {'trial_type': 'heatmap', 'sheet_index': sheet_idx}
-            ])
+    """
+    Generates a randomized sequence of trials ensuring:
+    1. Each dataset (0-9) is used exactly twice - once for heatmap and once for scatterplot
+    2. The presentation order is randomized
+    3. The pairing between visualization types is not fixed
     
-    # Create pairs for sheets 6-10 (lowest value questions)
-    low_value_pairs = []
-    for sheet_idx in range(5, 10):
-        if random.random() < 0.5:
-            low_value_pairs.extend([
-                {'trial_type': 'heatmap', 'sheet_index': sheet_idx},
-                {'trial_type': 'scatterplot', 'sheet_index': sheet_idx}
-            ])
-        else:
-            low_value_pairs.extend([
-                {'trial_type': 'scatterplot', 'sheet_index': sheet_idx},
-                {'trial_type': 'heatmap', 'sheet_index': sheet_idx}
-            ])
+    Returns:
+        list: List of dictionaries containing trial_type and sheet_index
+    """
+    # Create list of all possible trials (10 heatmaps and 10 scatterplots)
+    all_trials = []
     
-    # Combine and shuffle all pairs
-    all_pairs = high_value_pairs + low_value_pairs
-    random.shuffle(all_pairs)
-    return all_pairs
+    # Add one heatmap and one scatterplot trial for each dataset
+    for sheet_idx in range(10):  # 0-9 for all datasets
+        all_trials.extend([
+            {'trial_type': 'heatmap', 'sheet_index': sheet_idx},
+            {'trial_type': 'scatterplot', 'sheet_index': sheet_idx}
+        ])
+    
+    # Shuffle all trials to randomize presentation order
+    random.shuffle(all_trials)
+    
+    return all_trials
+
 
 # Function to load Excel data
 def load_excel_data(sheet_name):
@@ -126,7 +153,7 @@ def create_heatmap(df, question):
         data=go.Heatmap(
             z=df.values,
             x=df.columns,
-            y=list('ABCDEFGHIJ'),
+            y=df.index,
             colorscale='Blues',
             colorbar=dict(title='Values')
         ),
