@@ -92,36 +92,78 @@ def load_excel_data(sheet_name):
 
 # Function to find extreme value and its location
 def find_extreme_value(df, find_highest=True):
-    # Get numeric values only
-    values = df.values.astype(float)
+    """
+    Find extreme value (highest or lowest) and its location in the dataframe
+    with proper handling of string-to-numeric conversion.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        find_highest (bool): If True, find maximum value; if False, find minimum
+    
+    Returns:
+        dict: Dictionary containing value, school, and month
+    """
+    # Create a copy to avoid modifying original
+    numeric_df = df.copy()
+    
+    # Ensure all values are properly converted to numeric
+    for col in numeric_df.columns:
+        numeric_df[col] = pd.to_numeric(numeric_df[col], errors='coerce')
+    
+    # Get values array
+    values = numeric_df.values
     
     if find_highest:
-        value = np.nanmax(values)  # Using nanmax to handle any NaN values
+        value = np.nanmax(values)
         locations = np.where(values == value)
     else:
-        value = np.nanmin(values)  # Using nanmin to handle any NaN values
+        value = np.nanmin(values)
         locations = np.where(values == value)
     
-    # Get the school (row) and month (column) for the extreme value
-    school = df.index[locations[0][0]]
-    month = df.columns[locations[1][0]]
+    # Get all instances of the extreme value
+    extreme_locations = list(zip(locations[0], locations[1]))
     
-    return {
-        'value': float(value),  # Ensure value is float
-        'school': str(school),  # Ensure school is string
-        'month': str(month)     # Ensure month is string
+    # If there are multiple instances of the extreme value,
+    # prioritize by position (can modify this logic if needed)
+    row_idx, col_idx = extreme_locations[0]
+    
+    # Get the school (row) and month (column) for the extreme value
+    school = df.index[row_idx]
+    month = df.columns[col_idx]
+    
+    # Create return dictionary with proper type conversion
+    result = {
+        'value': float(value),
+        'school': str(school).strip(),
+        'month': str(month).strip()
     }
+    
+    return result
 
 # Function to generate question and answer
 def generate_question(df, chart_type, sheet_index):
-    # Determine if we're looking for highest (sheets 0-4) or lowest (sheets 5-9) value
-    find_highest = sheet_index < 5
-    extreme_info = find_extreme_value(df, find_highest)
+    """
+    Generate question and answer based on sheet index.
+    For sheets 0-4: Find highest value
+    For sheets 5-9: Use predetermined values
+    """
+    # Predefined values for sheets 5-9
+    predetermined_values = {
+        5: {'value': 0, 'school': 'B', 'month': 'February'},
+        6: {'value': 0.3, 'school': 'B', 'month': 'March'},
+        7: {'value': 1.5, 'school': 'B', 'month': 'April'},
+        8: {'value': 1.2, 'school': 'B', 'month': 'June'},
+        9: {'value': 0.5, 'school': 'B', 'month': 'November'}
+    }
     
-    if find_highest:
+    if sheet_index < 5:
+        # For sheets 0-4, find highest value as before
+        extreme_info = find_extreme_value(df, find_highest=True)
         question = f"Click on the highest absence rate in {extreme_info['month']} in the {'heatmap' if chart_type == 'heatmap' else 'scatter plot'}"
     else:
-        question = f"Click on the lowest absence rate in {extreme_info['month']} in the {'heatmap' if chart_type == 'heatmap' else 'scatter plot'}"
+        # For sheets 5-9, use predetermined values
+        extreme_info = predetermined_values[sheet_index]
+        question = f"Click on the lowest in {extreme_info['month']} in the {'heatmap' if chart_type == 'heatmap' else 'scatter plot'}"
     
     return question, extreme_info
 
