@@ -163,7 +163,7 @@ def generate_question(df, chart_type, sheet_index):
     else:
         # For sheets 5-9, use predetermined values
         extreme_info = predetermined_values[sheet_index]
-        question = f"Click on the lowest in {extreme_info['month']} in the {'heatmap' if chart_type == 'heatmap' else 'scatter plot'}"
+        question = f"Click on the lowest absence rate in {extreme_info['month']} in the {'heatmap' if chart_type == 'heatmap' else 'scatter plot'}"
     
     return question, extreme_info
 
