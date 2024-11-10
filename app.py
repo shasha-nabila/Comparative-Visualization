@@ -140,20 +140,41 @@ def find_extreme_value(df, find_highest=True):
     
     return result
 
+def find_extreme_value_in_month(df, month, find_highest=True):
+    """
+    Find extreme value in a specific month
+    """
+    # Get the values for the specified month
+    month_values = df[month].astype(float)
+    
+    if find_highest:
+        value = month_values.max()
+    else:
+        value = month_values.min()
+    
+    # Get the school (row index) where this value occurs
+    school = month_values[month_values == value].index[0]
+    
+    return {
+        'value': float(value),
+        'school': str(school).strip(),
+        'month': str(month).strip()
+    }
+
 # Function to generate question and answer
 def generate_question(df, chart_type, sheet_index):
     """
     Generate question and answer based on sheet index.
-    For sheets 0-4: Find highest value
-    For sheets 5-9: Use predetermined values
+    For sheets 0-4: Find highest value overall
+    For sheets 5-9: Find lowest value in specific month
     """
-    # Predefined values for sheets 5-9
-    predetermined_values = {
-        5: {'value': 0, 'school': 'B', 'month': 'February'},
-        6: {'value': 0.3, 'school': 'B', 'month': 'March'},
-        7: {'value': 1.5, 'school': 'B', 'month': 'April'},
-        8: {'value': 1.2, 'school': 'B', 'month': 'June'},
-        9: {'value': 0.5, 'school': 'B', 'month': 'November'}
+    # Predefined months for sheets 5-9
+    predetermined_months = {
+        5: 'February',
+        6: 'March',
+        7: 'April',
+        8: 'June',
+        9: 'November'
     }
     
     if sheet_index < 5:
@@ -161,26 +182,30 @@ def generate_question(df, chart_type, sheet_index):
         extreme_info = find_extreme_value(df, find_highest=True)
         question = f"Click on the highest absence rate in {extreme_info['month']} in the {'heatmap' if chart_type == 'heatmap' else 'scatter plot'}"
     else:
-        # For sheets 5-9, use predetermined values
-        extreme_info = predetermined_values[sheet_index]
-        question = f"Click on the lowest absence rate in {extreme_info['month']} in the {'heatmap' if chart_type == 'heatmap' else 'scatter plot'}"
+        # For sheets 5-9, find lowest value in predetermined month
+        target_month = predetermined_months[sheet_index]
+        extreme_info = find_extreme_value_in_month(df, target_month, find_highest=False)
+        question = f"Click on the lowest absence rate in {target_month} in the {'heatmap' if chart_type == 'heatmap' else 'scatter plot'}"
     
     return question, extreme_info
 
 # Function to check if clicked value matches the answer
 def check_answer(click_data, correct_answer, chart_type):
+    """
+    Check if clicked value matches the answer
+    """
     try:
         if chart_type == 'heatmap':
-            clicked_row = str(click_data['points'][0]['y'])  # Convert to string for comparison
-            clicked_col = str(click_data['points'][0]['x'])  # Convert to string for comparison
-            clicked_value = float(click_data['points'][0]['z'])  # Convert to float for comparison
+            clicked_row = str(click_data['points'][0]['y'])
+            clicked_col = str(click_data['points'][0]['x'])
+            clicked_value = float(click_data['points'][0]['z'])
         else:  # scatterplot
-            clicked_value = float(click_data['points'][0]['y'])  # Convert to float for comparison
-            clicked_col = str(click_data['points'][0]['x'])  # Convert to string for comparison
-            clicked_row = str(click_data['points'][0]['text'])  # Convert to string for comparison
+            clicked_value = float(click_data['points'][0]['y'])
+            clicked_col = str(click_data['points'][0]['x'])
+            clicked_row = str(click_data['points'][0]['text'])
         
         # Check if clicked position matches the correct answer
-        value_matches = abs(clicked_value - float(correct_answer['value'])) < 0.001  # Using small threshold for float comparison
+        value_matches = abs(clicked_value - float(correct_answer['value'])) < 0.001
         position_matches = (clicked_row.strip() == str(correct_answer['school']).strip() and 
                           clicked_col.strip() == str(correct_answer['month']).strip())
         
@@ -188,6 +213,7 @@ def check_answer(click_data, correct_answer, chart_type):
     except Exception as e:
         print(f"Error checking answer: {e}")
         return False
+    
 
 # Function to create heatmap
 def create_heatmap(df, question):
