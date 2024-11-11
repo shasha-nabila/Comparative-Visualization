@@ -7,6 +7,8 @@ import numpy as np
 import time
 from dash.exceptions import PreventUpdate
 import random
+import csv
+import os
 
 # Initialize the Dash app
 app = dash.Dash(__name__)
@@ -226,7 +228,8 @@ def create_heatmap(df, question):
             colorbar=dict(title='Values')
         ),
         layout=go.Layout(
-            title=question,
+            title="Percentage of Pupil Absence Rates Across 10 Schools in Town",
+            title_x=0.5,
             height=600
         )
     )
@@ -236,21 +239,59 @@ def create_scatterplot(df, question):
     melted_df = df.reset_index().melt(id_vars='index', var_name='Month', value_name='Value')
     melted_df.columns = ['School', 'Month', 'Value']
     
+    # Create a list to hold individual Scatter traces for each school
+    scatter_traces = []
+
+    # Loop over each unique school to create a trace with its own color
+    for school in melted_df['School'].unique():
+        school_data = melted_df[melted_df['School'] == school]
+        
+        # Add a scatter trace for each school with unique color and legend entry
+        scatter_traces.append(
+            go.Scatter(
+                x=school_data['Month'],
+                y=school_data['Value'],
+                mode='markers',
+                marker=dict(size=12, opacity=0.7),  # Set opacity for visibility
+                name=f'School {school}',  # Legend entry
+                text=school_data['School'],
+                hovertemplate='School: %{text}<br>Month: %{x}<br>Value: %{y:.2f}<extra></extra>'
+            )
+        )
+
+    # Return the figure with all individual school traces
+    return go.Figure(
+        data=scatter_traces,
+        layout=dict(
+            title="Percentage of Pupil Absence Rates Across 10 Schools in Town",
+            title_x=0.5,  # Center title
+            height=600,
+            showlegend=True  # Show the legend
+        )
+    )
+
+    '''
     return go.Figure(
         data=go.Scatter(
             x=melted_df['Month'],
             y=melted_df['Value'],
             mode='markers',
-            marker=dict(size=12),
+            marker=dict(
+                size=12,
+                opacity=0.7 # Set opacity to 70% for overlappping visibility
+            ),
             text=melted_df['School'],
             hovertemplate='School: %{text}<br>Month: %{x}<br>Value: %{y:.2f}<extra></extra>'
         ),
         layout=dict(
-            title=question,
+            title="Percentage of Pupil Absence Rates Across 10 Schools in Town",
+            title_x=0.5,
             height=600,
-            showlegend=False
+            showlegend=True
         )
     )
+    '''
+
 
 # App layout
 app.layout = html.Div([
@@ -349,7 +390,7 @@ def update_experiment(click_data, n_intervals, exp_state):
                                 if exp_state['choices'][i] == 'scatterplot' and correct)
             
             results_html = html.Div([
-                html.H2('Experiment Complete'),
+                #html.H2('Experiment Complete'),
                 html.H3('Results:'),
                 html.Ul([
                     html.Li(f"Average response time for Heatmap: {np.mean(heatmap_times):.2f} seconds"),
@@ -359,6 +400,52 @@ def update_experiment(click_data, n_intervals, exp_state):
                     html.Li(f"Total correct answers: {exp_state['correct_count']}/{TOTAL_PAIRS * 2}")
                 ])
             ])
+
+            # Prepare data for CSV
+            avg_heatmap_time = np.mean(heatmap_times)
+            avg_scatter_time = np.mean(scatter_times)
+            heatmap_correct_percent = (heatmap_correct / TOTAL_PAIRS) * 100
+            scatter_correct_percent = (scatter_correct / TOTAL_PAIRS) * 100
+            total_correct = exp_state['correct_count']
+
+            # Define headers and data row
+            headers = [
+                "Participant ID",
+                "Heatmap Average Response Time (s)",
+                "Scatterplot Average Response Time (s)",
+                "Heatmap % Correct",
+                "Scatterplot % Correct",
+                "Total correct (out of 20)"
+            ]
+            data_row = [
+                None,  # Placeholder for Participant ID
+                f"{avg_heatmap_time:.2f}",
+                f"{avg_scatter_time:.2f}",
+                f"{heatmap_correct_percent:.1f}",
+                f"{scatter_correct_percent:.1f}",
+                total_correct
+            ]
+
+            # Check if results.csv exists to determine starting Participant ID and add header if necessary
+            file_exists = os.path.isfile("results.csv")
+            with open("results.csv", mode="a", newline="") as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Write header if the file is new
+                if not file_exists:
+                    writer.writerow(headers)
+                
+                # Determine the next Participant ID
+                if file_exists:
+                    with open("results.csv", mode="r", newline="") as readfile:
+                        reader = csv.reader(readfile)
+                        row_count = sum(1 for row in reader) - 1  # Exclude header
+                else:
+                    row_count = 0  # File is new, so no rows
+
+                # Update Participant ID and write the data row
+                data_row[0] = row_count + 1  # Participant ID is next row count
+                writer.writerow(data_row)
             
             return (
                 exp_state,
