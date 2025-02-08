@@ -7,7 +7,7 @@ The interactive dashboard was developed using **Python (Dash & Plotly)** to cond
 ### Installation & Setup
 1. Clone this repository:
 ```
-git clone https://github.com/Comparative-Visualization.git
+git clone https://github.com/shasha-nabila/Comparative-Visualization.git
 cd information-visualization-repo/dashboard
 ```
 2. Create a virtual environment (optional but recommended):
